@@ -1,57 +1,71 @@
-var elevatorsConfig =
+var elevatorsManager =
 {
     outsideQueue: [],  
     elevators: [],      
     init: function(elevators, floors) {
         this.elevators = elevators;
-        //var middleFloor = Math.round(floors.length / 2);
         elevators.forEach(this.hitch(this, function (elevator, elIdx) {
 
-            //---- ACTIVITY OF ELEVATORS
+            //********** ACTIVITY OF ELEVATORS **********
+
+            //**** A floor button is pressed by a mob INSIDE the elevator
             elevator.on("floor_button_pressed", this.hitch(this, function (floorNum) {
-                this.goToFloorAndCleanQueue(elevator, floorNum);                
+
+                //if floor number DONT EXIST in INSIDE-QUEUE of elevator
+                var insideIdx = this.indexOfFloorInInsideQueue(elevator, floorNum);
+                if (insideIdx === -1) {
+                    
+                    //--> push floor in INSIDE-QUEUE
+                    elevator.goToFloor(floorNum); 
+                    
+                    //--> clean the OUTSIDE-QUEUE of this floor
+                    this.cleanFloorInOutsideQueue(floorNum);                
+                }
             }));
 
-/*          elevator.on("stopped_at_floor", lthis.hitch(this, function(floorNum) {
-                this.cleanFloorInOutsideQueue(floorNum);                
-            }));*/
-            
+            //**** Elevator just stopped at a floor
+            elevator.on("stopped_at_floor", this.hitch(this, function(floorNum) {
+
+                //--> clean the OUTSIDE-QUEUE of this floor
+                this.cleanFloorInOutsideQueue(floorNum);  
+            }));
+
+            //**** Elevator is doing anything because INSIDE-QUEUE is empty, and none is waiting at current floor
             elevator.on("idle", this.hitch(this, function () {
-                this.cleanFloorInOutsideQueue(elevator.currentFloor());
-/*              elevator.goingUpIndicator(true);
-                elevator.goingDownIndicator(true);*/
-                //var insideCombinedQueue = this.getInsideCombinedQueue(2);
-                var repeat = setInterval(this.hitch(this, function () {                      
-                    if (this.outsideQueue.length > 0/* && insideCombinedQueue.indexOf(this.outsideQueue[0].floorNum) === -1*/) {
+                
+                //launch a loop "watching" the OUTSIDE-QUEUE
+                var repeat = setInterval(this.hitch(this, function () {    
+
+                    //if OUTSIDE-QUEUE is not empty, go to next OUTSIDE-QUEUE order and stop watching                  
+                    if (this.outsideQueue.length > 0) {
                         clearInterval(repeat);
-                        this.goToFloorAndCleanQueue(elevator, this.outsideQueue[0].floorNum);
+                        this.goToFloorAndCleanQueues(elevator, this.outsideQueue[0].floorNum);
                     } 
-                    else if (elIdx !== elevator.currentFloor()) {
+
+                    //if OUTSIDE-QUEUE is empty, but elevator is not in the floor equals to is proper index, go to "it prefered floor"
+                    else if (elIdx !== elevator.currentFloor() && elIdx < floors.length) {
                         clearInterval(repeat);
-                        this.goToFloorAndCleanQueue(elevator, elIdx);            
+                        this.goToFloorAndCleanQueues(elevator, elIdx);            
                     }
                 }), 10);  
 
             }));   
 
-            elevator.on("passing_floor", this.hitch(this, function(floorNum, direction) {                
-                var idx = this.indexOfFloorInOutsideQueue(floorNum/*, direction*/);
+            //**** Elevator will reach a floor in few milliseconds
+            elevator.on("passing_floor", this.hitch(this, function(floorNum, direction) { 
+
+                //check if this floor existe in INSIDE-QUEUE or OUTSIDE-QUEUE               
+                var outsideIdx = this.indexOfFloorInOutsideQueue(floorNum);
+                var insideIdx = this.indexOfFloorInInsideQueue(elevator, floorNum);
+
+                //if loadFactor is reasonnable (< 3 people in elevator), let's pick more on road people and clean QUEUES
                 var loadFactor = elevator.loadFactor();
-                if ((idx >= 0) && (loadFactor <= 0.725)) {
-/*                    if (floorNum < elevator.currentFloor()) {
-                        elevator.goingUpIndicator(false);
-                        elevator.goingDownIndicator(true);
-                    }
-                    else if (floorNum > elevator.currentFloor()) {
-                        elevator.goingUpIndicator(true);
-                        elevator.goingDownIndicator(false);
-                    }
-                    else {
-                        elevator.goingUpIndicator(true);
-                        elevator.goingDownIndicator(true);
-                    }*/
-                    this.goToFloorOnRoad(elevator, floorNum);
+                if (loadFactor <= 0.725 && (outsideIdx >= 0 || insideIdx >= 0)) {
+                    this.cleanFloorInOutsideQueue(floorNum);
+                    this.cleanFloorInInsideQueue(elevator, floorNum);  
+                    this.unshiftFloorInInsideQueue(elevator, floorNum); 
                 }
+
             }));
 
         }));
@@ -59,10 +73,10 @@ var elevatorsConfig =
         //---- ACTIVITY OF FLOORS
         floors.forEach(this.hitch(this,function (floor) {
             floor.on("down_button_pressed", this.hitch(this, function(flNb) {
-                this.addFloorToOutsideQueue(flNb, "down");  
+                this.addFloorToOutsideQueue(flNb);  
             }, floor.floorNum()));
             floor.on("up_button_pressed", this.hitch(this, function(flNb) {
-                this.addFloorToOutsideQueue(flNb, "up");  
+                this.addFloorToOutsideQueue(flNb);  
             }, floor.floorNum()));
         }));  
 
@@ -101,16 +115,17 @@ var elevatorsConfig =
             this.outsideQueue.splice(idx, 1);
         } 
     },
-    indexOfFloorInOutsideQueue: function (floorNum, direction) {        
-        return this.some(this.outsideQueue, function (index, floor) {
+    indexOfFloorInOutsideQueue: function (floorNum) {        
+        var currentIndex = this.some(this.outsideQueue, function (index, floor) {
             var exists = floor.floorNum === floorNum;
-            //var found = direction ? exists && floor.direction === direction : exists;
             if (exists) {
                 return index;
             }     
-        }); 
+        });
+        return currentIndex;
     }, 
-    addFloorToInsideQueue: function (elevator, floorNum) {
+    unshiftFloorInInsideQueue: function (elevator, floorNum) {
+        this.cleanFloorInInsideQueue(elevator, floorNum);
         elevator.destinationQueue.unshift(floorNum);
         elevator.checkDestinationQueue(); 
     },
@@ -122,15 +137,20 @@ var elevatorsConfig =
         });
         elevator.checkDestinationQueue();
     },
-    goToFloorAndCleanQueue: function (elevator, floorNum) {        
-        this.cleanFloorInOutsideQueue(floorNum);   
+    indexOfFloorInInsideQueue: function (elevator, floorNum) {        
+        var currentIndex = this.some(elevator.destinationQueue, function (index, floorInQueue) {
+            var exists = floorInQueue === floorNum;
+            if (exists) {
+                return index;
+            }     
+        });
+        return currentIndex;
+    }, 
+    goToFloorAndCleanQueues: function (elevator, floorNum) {        
+        this.cleanFloorInOutsideQueue(floorNum); 
+        this.cleanFloorInInsideQueue(elevator, floorNum);  
         elevator.goToFloor(floorNum);
     }, 
-    goToFloorOnRoad: function (elevator, floorNum) {
-        this.cleanFloorInOutsideQueue(floorNum);
-        this.cleanFloorInInsideQueue(elevator, floorNum);  
-        this.addFloorToInsideQueue(elevator, floorNum);   
-    },
 
     //functionnal helpers
     some: function(arr, test) {
