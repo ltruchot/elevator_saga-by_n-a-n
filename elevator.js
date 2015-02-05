@@ -102,12 +102,23 @@ var elevatorsManager =
         return combinedQueue;
     }, 
     addFloorToOutsideQueue: function (floorNum, direction) {
-        if (this.indexOfFloorInOutsideQueue(floorNum) === -1) {
+        var floorIndex = this.indexOfFloorInOutsideQueue(floorNum);
+        if (floorIndex === -1) {
             this.outsideQueue.push({
                 floorNum: floorNum,
-                direction: direction
+                direction: direction,
+                priorityLevel: 0
             });        
         }
+        else {
+             ++this.outsideQueue[floorIndex].priorityLevel;   
+        }    
+        this.sortOutsideQueueBy("priorityLevel");
+    },
+    sortOutsideQueueBy: function (sortField) {
+        this.outsideQueue.sort(function (a, b) {
+            return a[sortField] - b[sortField];
+        });
     },
     cleanFloorInOutsideQueue: function (floorNum) {
         var idx = this.indexOfFloorInOutsideQueue(floorNum);
