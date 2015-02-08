@@ -16,7 +16,8 @@ var elevatorsManager =
                 if (insideIdx === -1) {
                     
                     //--> push floor in INSIDE-QUEUE
-                    elevator.goToFloor(floorNum); 
+                    this.goToFloorAndCleanQueues(elevator, floorNum); 
+
                     
                     //--> clean the OUTSIDE-QUEUE of this floor
                     this.cleanFloorInOutsideQueue(floorNum);                
@@ -25,12 +26,17 @@ var elevatorsManager =
 
             //**** Elevator just stopped at a floor
             elevator.on("stopped_at_floor", this.hitch(this, function(floorNum) {
+                elevator.goingUpIndicator(true);
+                elevator.goingDownIndicator(true);
 
                 //--> clean the OUTSIDE-QUEUE of this floor
-                this.cleanFloorInOutsideQueue(floorNum);  
+                this.cleanFloorInOutsideQueue(floorNum);
+
+
+                  
             }));
 
-            //**** Elevator is doing anything because INSIDE-QUEUE is empty, and none is waiting at current floor
+            //**** Elevator is doing anything because INSIDE-QUEUE is empty, and none is waiting at current floor            
             elevator.on("idle", this.hitch(this, function () {
                 
                 //launch a loop "watching" the OUTSIDE-QUEUE
@@ -53,7 +59,7 @@ var elevatorsManager =
 
             //**** Elevator will reach a floor in few milliseconds
             elevator.on("passing_floor", this.hitch(this, function(floorNum, direction) { 
-
+                
                 //check if this floor existe in INSIDE-QUEUE or OUTSIDE-QUEUE               
                 var outsideIdx = this.indexOfFloorInOutsideQueue(floorNum);
                 var insideIdx = this.indexOfFloorInInsideQueue(elevator, floorNum);
@@ -101,17 +107,19 @@ var elevatorsManager =
         });
         return combinedQueue;
     }, 
-    addFloorToOutsideQueue: function (floorNum, direction) {
+    addFloorToOutsideQueue: function (floorNum, direction, empty) {
         var floorIndex = this.indexOfFloorInOutsideQueue(floorNum);
         if (floorIndex === -1) {
             this.outsideQueue.push({
                 floorNum: floorNum,
                 direction: direction,
-                priorityLevel: 0
+                priorityLevel: 0,
+                isEmpty: empty
             });        
         }
         else {
-             ++this.outsideQueue[floorIndex].priorityLevel;   
+            ++this.outsideQueue[floorIndex].priorityLevel;
+            this.outsideQueue[floorIndex].isEmpty = false;;  
         }    
         this.sortOutsideQueueBy("priorityLevel");
     },
@@ -161,6 +169,21 @@ var elevatorsManager =
         this.cleanFloorInOutsideQueue(floorNum); 
         this.cleanFloorInInsideQueue(elevator, floorNum);  
         elevator.goToFloor(floorNum);
+
+        //--> set indicators
+        console.error("goingUpIndicator:", elevator.goingUpIndicator());
+        console.error("goingUpIndicator:", elevator.goingDownIndicator());
+        var btnVisible = true;
+        if (elevator.destinationQueue[0]) {
+            btnVisible = elevator.destinationQueue[0] > elevator.currentFloor();
+            elevator.goingUpIndicator(btnVisible);
+            elevator.goingDownIndicator(!btnVisible);
+        }
+        else {
+            elevator.goingUpIndicator(true);
+            elevator.goingDownIndicator(true);
+        }
+
     }, 
 
     //functionnal helpers
@@ -210,6 +233,11 @@ var elevatorsManager =
             return this.partial
         }
         */
+    },
+
+    //string helpers
+    capitaliseFirstLetter: function (string) {
+        return string.charAt(0).toUpperCase() + string.slice(1);
     },
    
    //unusable native method "update"    
